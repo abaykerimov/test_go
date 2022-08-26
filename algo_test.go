@@ -1,197 +1,150 @@
 package algo_test
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestCall1(t *testing.T) {
-	got, err := call1()
+	a1 := A1{}
+	got, _ := call(a1)
 	want := []string{"A", "B", "C"}
 
-	if err == nil {
-		t.Skip("no error")
-	} else {
-		t.Error("err: ", err)
-	}
-
-	if !Equal(got, want) {
-		t.Errorf("got %q, wanted %q", got, want)
-	}
+	assert.Equal(t, got, want, "The two vars should be the same.")
 }
 
 func TestCall2(t *testing.T) {
-	got, err := call2()
+	a2 := A2{}
+	got, err := call(a2)
 	want := []string{"B", "C"}
 
-	if err != nil {
-		t.Error("err: ", err)
+	var expectedError = errors.New("error in A")
+	if assert.Error(t, err) {
+		assert.Equal(t, expectedError, err)
 	}
 
-	if !Equal(got, want) {
-		t.Errorf("got %q, wanted %q", got, want)
-	}
+	assert.Equal(t, got, want, "The two vars should be the same.")
 }
 
 func TestCall3(t *testing.T) {
-	got, err := call3()
+	a3 := A3{}
+	got, err := call(a3)
 	want := []string{"B", "C"}
 
-	if err != nil {
-		t.Error("err: ", err)
+	var expectedError = errors.New("runtime error: integer divide by zero")
+	if assert.Error(t, err) {
+		assert.Equal(t, expectedError, err)
 	}
 
-	if !Equal(got, want) {
-		t.Errorf("got %q, wanted %q", got, want)
-	}
+	assert.Equal(t, got, want, "The two vars should be the same.")
 }
 
 func TestCall4(t *testing.T) {
-	got, err := call4()
+	a4 := A4{}
+	got, _ := call(a4)
 	want := []string{"B", "C"}
 
-	if err != nil {
-		t.Error("err: ", err)
-	}
-
-	if !Equal(got, want) {
-		t.Errorf("got %q, wanted %q", got, want)
-	}
+	assert.Equal(t, got, want, "The two vars should be the same.")
 }
 
-type aResponse struct {
-	a   string
-	div int
-	err error
+type A1 struct{}
+type A2 struct{}
+type A3 struct{}
+type A4 struct{}
+
+type funcA interface {
+	A(a chan string, p chan interface{}) (string, error)
 }
 
-func call1() (d []string, err error) {
+func call(i funcA) (d []string, err error) {
 	a := make(chan string)
-	b := make(chan string)
-	c := make(chan string)
-
-	go A1(a)
-	go B(b)
-	go C(c)
-
-	d = append(d, <-a, <-b, <-c)
-
-	return
-}
-
-func call2() (d []string, err error) {
-	a := make(chan aResponse)
-	b := make(chan string)
-	c := make(chan string)
-
-	go A2(a)
-	go B(b)
-	go C(c)
-
-	d = append(d, <-b, <-c)
-
-	result := <-a
-	if result.err != nil {
-		return
-	}
-	d = append(d, result.a)
-
-	return
-}
-
-func call3() (d []string, err error) {
-	a := make(chan aResponse)
 	b := make(chan string)
 	c := make(chan string)
 	p := make(chan interface{})
 
-	go A3(100, 0, a, p)
+	go i.A(a, p)
 	go B(b)
 	go C(c)
 
-	select {
-	case <-a:
-		result := <-a
-		if result.err != nil {
+	switch v := i.(type) {
+	case A1:
+		d = append(d, <-a, <-b, <-c)
+	case A2:
+		select {
+		case <-a:
+			d = append(d, <-a, <-b, <-c)
+			return
+		case errA := <-p:
+			err = fmt.Errorf("%s", errA)
+			d = append(d, <-b, <-c)
 			return
 		}
-		d = append(d, result.a, <-b, <-c)
-		return
-	case <-p:
-		d = append(d, <-b, <-c)
-		return
-	}
-}
-
-func call4() (d []string, err error) {
-	a := make(chan string)
-	b := make(chan string)
-	c := make(chan string)
-
-	go A4(a)
-	go B(b)
-	go C(c)
-
-	select {
-	case <-time.After(2 * time.Second):
-		d = append(d, <-b, <-c)
+	case A3:
+		select {
+		case <-a:
+			d = append(d, <-a, <-b, <-c)
+			return
+		case rec := <-p:
+			err = fmt.Errorf("%s", rec)
+			d = append(d, <-b, <-c)
+			return
+		}
+	case A4:
+		select {
+		case <-time.After(2 * time.Second):
+			d = append(d, <-b, <-c)
+			return
+		}
+	default:
+		fmt.Printf("I don't know about type %T!\n", v)
 		return
 	}
-}
 
-func A1(a chan string) (response string, err error) {
-	response = "A"
-	a <- response
 	return
 }
 
-func A2(a chan aResponse) (response aResponse, err error) {
-	response.err = fmt.Errorf("error in A")
-	a <- response
-	return
+func (an A1) A(a chan string, p chan interface{}) (string, error) {
+	a <- "A"
+	return "", nil
 }
 
-func A3(one, two int, a chan aResponse, p chan interface{}) (response aResponse, err error) {
+func (an A2) A(a chan string, p chan interface{}) (string, error) {
+	err := errors.New("error in A")
+	p <- err
+	a <- "A"
+	return "", err
+}
+
+func (an A3) A(a chan string, p chan interface{}) (string, error) {
 	defer func() {
 		if r := recover(); r != nil {
 			p <- r
 			fmt.Println("recover err: ", r)
 		}
 	}()
-	response.a = "A"
-	response.div = one / two
-	a <- response
-	return
+	var one, two = 100, 0
+	div := one / two
+	fmt.Println(div)
+	a <- "A"
+	return "", nil
 }
 
-func A4(a chan string) (response string, err error) {
-	response = "A"
+func (an A4) A(a chan string, p chan interface{}) (string, error) {
 	time.Sleep(10 * time.Second)
-	a <- response
-	return
+	a <- "A"
+	return "", nil
 }
 
-func B(b chan string) (response string, err error) {
-	response = "B"
-	b <- response
-	return
+func B(b chan string) (string, error) {
+	b <- "B"
+	return "", nil
 }
 
-func C(c chan string) (response string, err error) {
-	response = "C"
-	c <- response
-	return
-}
-
-func Equal(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i, v := range a {
-		if v != b[i] {
-			return false
-		}
-	}
-	return true
+func C(c chan string) (string, error) {
+	c <- "C"
+	return "", nil
 }
