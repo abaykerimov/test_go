@@ -64,14 +64,12 @@ type aResponse struct {
 	a   string
 	div int
 	err error
-	r   interface{}
 }
 
-func call1() ([]string, error) {
+func call1() (d []string, err error) {
 	a := make(chan string)
 	b := make(chan string)
 	c := make(chan string)
-	d := make([]string, 0)
 
 	go A1(a)
 	go B(b)
@@ -79,7 +77,7 @@ func call1() ([]string, error) {
 
 	d = append(d, <-a, <-b, <-c)
 
-	return d, nil
+	return
 }
 
 func call2() (d []string, err error) {
